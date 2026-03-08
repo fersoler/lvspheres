@@ -1,28 +1,456 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shiny App</title>
-    <script
-      src="./shinylive/load-shinylive-sw.js"
-      type="module"
-    ></script>
-    <script type="module">
-      import { runExportedApp } from "./shinylive/shinylive.js";
-      runExportedApp({
-        id: "root",
-        appEngine: "r",
-        relPath: "",
-      });
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inner structure of biodiversity (Full JS Engine)</title>
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="js/lemke.js"></script>
+    <script src="js/is-logic.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .nav-tabs button {
+            padding: 12px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 15px;
+            color: #666;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .nav-tabs button:hover {
+            color: #007bff;
+            background: #f0f7ff;
+        }
+
+        .nav-tabs button.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+            font-weight: 600;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+        }
+
+        .col-left,
+        .col-right {
+            flex: 1;
+            min-width: 420px;
+        }
+
+        #plotly-div {
+            height: 550px;
+            width: 100%;
+            border: 1px solid #eee;
+            border-radius: 8px;
+        }
+
+        #cyto-div {
+            height: 550px;
+            width: 100%;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        .instructions {
+            background: #f0f7ff;
+            padding: 12px 18px;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        h1 {
+            font-size: 26px;
+            color: #2c3e50;
+            margin-top: 0;
+        }
+
+        h2 {
+            font-size: 20px;
+            color: #34495e;
+            margin-top: 0;
+        }
+
+        .formula-box {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff;
+            border: 1px solid #f0f0f0;
+            border-radius: 8px;
+            text-align: center;
+            min-height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.4s;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 0.9s linear infinite;
+            margin-bottom: 18px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <h2 id="loading-msg">Loading sphere data...</h2>
+        <p id="loading-detail" style="color:#666;">Please wait.</p>
+    </div>
+
+    <div class="container">
+        <h1>Inner structure of biodiversity</h1>
+        <div class="nav-tabs">
+            <button id="btn-coop" class="active" onclick="switchTab('coop')">Cooperation</button>
+            <button id="btn-comp" onclick="switchTab('comp')">Competition</button>
+            <button id="btn-both" onclick="switchTab('both')">Cooperation and Competition</button>
+        </div>
+
+        <h2 id="tab-title">Cooperative version</h2>
+        <div class="instructions">
+            Drag to rotate the sphere. Click or tap any point to compute its Information Structure (IS).
+        </div>
+
+        <div class="row">
+            <div class="col-left">
+                <div id="plotly-div"></div>
+                <div class="formula-box" id="matrix-math"></div>
+            </div>
+            <div class="col-right">
+                <div id="cyto-div"></div>
+                <div class="formula-box" id="params-math">Click a point on the sphere to compute the IS graph.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let MESHES = { coop: null, comp: null, both: null };
+        let CURRENT_TAB = 'coop';
+        let cy = null;
+        let currentMesh = null;
+
+        const GAMMAS = {
+            coop: [[-1, 0.3, 0.3], [0.3, -1, 0.3], [0.3, 0.3, -1]],
+            comp: [[-1, -0.1, -0.23], [-0.3, -1, -0.12], [-0.2, -0.17, -1]],
+            both: [[-1, 0.3, -0.2], [0.15, -1, 0.23], [-0.31, 0.2, -1]]
+        };
+
+        const COLORS_PAL = ["#806000", "#002080", "#408000"];
+        const POTENTIAL_KEYS = ["0,0,0", "1,0,0", "0,1,0", "1,1,0", "0,0,1", "1,0,1", "0,1,1", "1,1,1"];
+
+        // ---- Loading ----
+        async function loadMesh(tab) {
+            if (MESHES[tab]) return true;
+            try {
+                const r = await fetch(`mesh_${tab}.json`);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const d = await r.json();
+                if (d.facecolor) d.facecolor = d.facecolor.map(c => Array.isArray(c) ? c[0] : c);
+                MESHES[tab] = d;
+                return true;
+            } catch (e) {
+                showError(`Error loading mesh_${tab}.json: ${e.message}`);
+                return false;
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById('loading').innerHTML = `
+                <div style="text-align:center;color:red;padding:40px;">
+                    <h3>${msg}</h3>
+                    <button onclick="location.reload()" style="padding:10px 24px;margin-top:20px;cursor:pointer;font-size:15px;">Retry</button>
+                </div>`;
+            document.getElementById('loading').style.display = 'flex';
+            document.getElementById('loading').style.opacity = '1';
+        }
+
+        function hideLoading() {
+            const el = document.getElementById('loading');
+            el.style.opacity = '0';
+            el.style.pointerEvents = 'none';
+            setTimeout(() => el.style.display = 'none', 500);
+        }
+
+
+
+        async function init() {
+            const ok = await loadMesh('coop');
+            if (!ok) return;
+            hideLoading();
+            initCytoscape();
+            await switchTab('coop');
+            // Background-load others
+            loadMesh('comp');
+            loadMesh('both');
+        }
+
+        async function switchTab(tab) {
+            CURRENT_TAB = tab;
+            document.querySelectorAll('.nav-tabs button').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-' + tab).classList.add('active');
+            const titles = { coop: 'Cooperative version', comp: 'Competitive version', both: 'Cooperative/Competitive version' };
+            document.getElementById('tab-title').innerText = titles[tab];
+            renderMatrix();
+            if (!MESHES[tab]) {
+                document.getElementById('loading').style.display = 'flex';
+                document.getElementById('loading').style.opacity = '1';
+                document.getElementById('loading-msg').innerText = `Loading ${titles[tab]}...`;
+                const ok = await loadMesh(tab);
+                if (!ok) return;
+                hideLoading();
+            }
+            currentMesh = MESHES[tab];
+            drawSphere();
+            // Default initial graph at (1, 0, 0)
+            generateAndDrawGraph(1, 0, 0);
+        }
+
+        // ---- Matrix render ----
+        function renderMatrix() {
+            const m = GAMMAS[CURRENT_TAB];
+            const div = document.getElementById('matrix-math');
+            div.innerHTML = `\\( A = \\begin{bmatrix} -1 & ${m[0][1]} & ${m[0][2]} \\\\ ${m[1][0]} & -1 & ${m[1][2]} \\\\ ${m[2][0]} & ${m[2][1]} & -1 \\end{bmatrix} \\)`;
+            if (window.MathJax) MathJax.typesetPromise([div]);
+        }
+
+        // ---- Sphere draw ----
+        function drawSphere() {
+            const mesh = currentMesh;
+            if (!mesh) return;
+
+            const trace = {
+                type: 'mesh3d',
+                x: mesh.x, y: mesh.y, z: mesh.z,
+                i: mesh.i, j: mesh.j, k: mesh.k,
+                facecolor: mesh.facecolor,
+                flatshading: true,
+                lighting: {
+                    ambient: 0.5,
+                    diffuse: 0.8,
+                    fresnel: 0.1,
+                    specular: 0.5,
+                    roughness: 0.5,
+                    facenormalsepsilon: 0,
+                    vertexnormalsepsilon: 0
+                },
+                hovertemplate: 'r₁: %{x:.3f}<br>r₂: %{y:.3f}<br>r₃: %{z:.3f}<extra></extra>',
+                name: ''
+            };
+
+            const layout = {
+                margin: { l: 0, r: 0, b: 0, t: 0 },
+                scene: {
+                    xaxis: { title: 'r₁', range: [-1, 1] },
+                    yaxis: { title: 'r₂', range: [-1, 1] },
+                    zaxis: { title: 'r₃', range: [-1, 1] },
+                    camera: { eye: { x: 1.6, y: 1.6, z: 1.6 } },
+                    aspectmode: 'cube'
+                },
+                showlegend: false
+            };
+
+            Plotly.react('plotly-div', [trace], layout, { responsive: true, displayModeBar: false });
+
+            // Attach events fresh after each redraw
+            const el = document.getElementById('plotly-div');
+            el.removeAllListeners && el.removeAllListeners('plotly_click');
+            el.removeAllListeners && el.removeAllListeners('plotly_hover');
+            el.on('plotly_click', handleSphereEvent);
+            el.on('plotly_hover', handleSphereEvent);
+        }
+
+        function handleSphereEvent(data) {
+            if (!data || !data.points || data.points.length === 0) return;
+            const pt = data.points[0];
+            // For mesh3d, pt.x/y/z are the vertex coordinates
+            if (pt.x !== undefined) {
+                generateAndDrawGraph(pt.x, pt.y, pt.z);
+            }
+        }
+
+        // ---- Cytoscape ----
+        function initCytoscape() {
+            cy = cytoscape({
+                container: document.getElementById('cyto-div'),
+                style: [
+                    {
+                        selector: 'node', style: {
+                            'width': 'data(size)', 'height': 'data(size)',
+                            'background-color': 'data(bg)',
+                            'border-width': 2, 'border-color': '#333',
+                            'visibility': 'hidden'
+                        }
+                    },
+                    { selector: 'node[?active]', style: { 'visibility': 'visible' } },
+                    {
+                        selector: 'node[?isPie]', style: {
+                            'pie-size': '100%',
+                            'pie-1-background-color': COLORS_PAL[0], 'pie-1-background-size': 'data(pie1)',
+                            'pie-2-background-color': COLORS_PAL[1], 'pie-2-background-size': 'data(pie2)',
+                            'pie-3-background-color': COLORS_PAL[2], 'pie-3-background-size': 'data(pie3)'
+                        }
+                    },
+                    { selector: '.gass', style: { 'border-width': 8, 'border-color': '#ff9800' } },
+                    {
+                        selector: 'edge', style: {
+                            'width': 3, 'line-color': '#777',
+                            'target-arrow-shape': 'triangle', 'target-arrow-color': '#777',
+                            'curve-style': 'bezier',
+                            'visibility': 'hidden'
+                        }
+                    },
+                    { selector: 'edge[?active]', style: { 'visibility': 'visible' } }
+                ],
+                layout: { name: 'preset' },
+                userZoomingEnabled: false
+            });
+
+            POTENTIAL_KEYS.forEach(key => {
+                const c = vertexCoords3D[key];
+                cy.add({ group: 'nodes', data: { id: key, size: 20, bg: '#eee' }, position: { x: c[0] * 130 + 300, y: -c[1] * 130 + 300 } });
+            });
+        }
+
+        // ---- Graph generation ----
+        let _lastGraph = null;
+        function generateAndDrawGraph(x, y, z) {
+            const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+            if (key === _lastGraph) return;
+            _lastGraph = key;
+
+            // Update params display
+            const div = document.getElementById('params-math');
+            div.innerHTML = `\\( \\begin{eqnarray}
+                \\color{#806000}{r_1} & \\color{#806000}{=} & \\color{#806000}{${x.toFixed(3)}} \\\\
+                \\color{#002080}{r_2} & \\color{#002080}{=} & \\color{#002080}{${y.toFixed(3)}} \\\\
+                \\color{#408000}{r_3} & \\color{#408000}{=} & \\color{#408000}{${z.toFixed(3)}}
+            \\end{eqnarray} \\)`;
+            if (window.MathJax) MathJax.typesetPromise([div]);
+
+            // Compute IS
+            let isData;
+            try {
+                isData = ISbuild([x, y, z], GAMMAS[CURRENT_TAB]);
+            } catch (e) {
+                console.error('ISbuild error:', e);
+                return;
+            }
+
+            const maxAbund = Math.max(0.001, ...isData.points.map(p => p.reduce((a, b) => a + b, 0)));
+
+            // Reset graph
+            cy.elements().data('active', false).removeClass('gass');
+            cy.remove('edge');
+
+            // Draw nodes
+            isData.points.forEach((p, idx) => {
+                const k = p.map(v => v > 1e-8 ? 1 : 0).join(",");
+                const node = cy.$id(k);
+                if (!node.length) return;
+
+                const posI = p.reduce((acc, v, i) => { if (v > 1e-8) acc.push(i); return acc; }, []);
+                let isPie = false, bg = '#eee', pie = [0, 0, 0];
+
+                if (posI.length === 0) {
+                    bg = 'white'; // extinction
+                } else if (posI.length === 1) {
+                    bg = COLORS_PAL[posI[0]];
+                } else {
+                    isPie = true;
+                    const total = p.reduce((s, v) => s + Math.max(0, v), 0) || 1;
+                    pie = p.map(v => (Math.max(0, v) / total) * 100);
+                }
+
+                const abund = p.reduce((a, b) => a + b, 0);
+                const sz = 20 + 20 * (abund / maxAbund);
+
+                node.data({ active: true, size: sz, bg, isPie, pie1: pie[0], pie2: pie[1], pie3: pie[2] });
+                if ((idx + 1) === isData.gassInd) node.addClass('gass');
+            });
+
+            // Draw edges
+            isData.connectivity.forEach((row, i) => {
+                row.forEach((val, j) => {
+                    if (val !== 1) return;
+                    const s = isData.points[i].map(v => v > 1e-8 ? 1 : 0).join(",");
+                    const t = isData.points[j].map(v => v > 1e-8 ? 1 : 0).join(",");
+                    try {
+                        cy.add({ group: 'edges', data: { id: `e${i}-${j}`, source: s, target: t, active: true } });
+                    } catch (e) { /* duplicate edge */ }
+                });
+            });
+
+
+        }
+
+        init();
     </script>
-    <link rel="stylesheet" href="./shinylive/style-resets.css" />
-    <link rel="stylesheet" href="./shinylive/shinylive.css" />
-    
-  </head>
-  <body>
-    
-    <div style="height: 100vh; width: 100vw" id="root"></div>
-    
-  </body>
+</body>
+
 </html>
