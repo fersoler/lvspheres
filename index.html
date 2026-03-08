@@ -66,7 +66,7 @@
         .col-left,
         .col-right {
             flex: 1;
-            min-width: 420px;
+            min-width: 300px;
         }
 
         #plotly-div {
@@ -152,6 +152,64 @@
 
             100% {
                 transform: rotate(360deg);
+            }
+        }
+
+        /* ---- Responsive / Mobile ---- */
+        @media (max-width: 700px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                padding: 16px;
+                border-radius: 8px;
+            }
+
+            h1 {
+                font-size: 20px;
+            }
+
+            h2 {
+                font-size: 16px;
+            }
+
+            .nav-tabs {
+                flex-wrap: wrap;
+                gap: 3px;
+                margin-bottom: 14px;
+            }
+
+            .nav-tabs button {
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+
+            .col-left,
+            .col-right {
+                min-width: 100%;
+            }
+
+            .row {
+                gap: 16px;
+            }
+
+            #plotly-div {
+                height: 340px;
+            }
+
+            #cyto-div {
+                height: 320px;
+            }
+
+            .formula-box {
+                min-height: 70px;
+                font-size: 0.9em;
+            }
+
+            .instructions {
+                font-size: 13px;
+                padding: 10px 14px;
             }
         }
     </style>
@@ -306,9 +364,9 @@
             const layout = {
                 margin: { l: 0, r: 0, b: 0, t: 0 },
                 scene: {
-                    xaxis: { title: 'r₁', range: [-1, 1] },
-                    yaxis: { title: 'r₂', range: [-1, 1] },
-                    zaxis: { title: 'r₃', range: [-1, 1] },
+                    xaxis: { title: { text: 'r₁', font: { size: 18 } }, range: [-1, 1] },
+                    yaxis: { title: { text: 'r₂', font: { size: 18 } }, range: [-1, 1] },
+                    zaxis: { title: { text: 'r₃', font: { size: 18 } }, range: [-1, 1] },
                     camera: { eye: { x: 1.6, y: 1.6, z: 1.6 } },
                     aspectmode: 'cube'
                 },
